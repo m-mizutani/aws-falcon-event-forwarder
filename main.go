@@ -36,10 +36,23 @@ func main() {
 }
 
 type Argument struct {
-	S3Bucket  string `json:"s3bucket"`
-	S3Prefix  string `json:"s3prefix"`
-	S3Region  string `json:"s3region"`
-	SecretArn string `json:"secret_arn"`
+	S3Bucket   string `json:"s3bucket"`
+	S3Prefix   string `json:"s3prefix"`
+	S3Region   string `json:"s3region"`
+	SecretArn  string `json:"secret_arn"`
+	StateTable string `json:"state_table"`
+	FuncName   string
+}
+
+func newArgument() Argument {
+	return Argument{
+		S3Bucket:   os.Getenv("S3_BUCKET"),
+		S3Prefix:   os.Getenv("S3_PREFIX"),
+		S3Region:   os.Getenv("S3_REGION"),
+		SecretArn:  os.Getenv("SECRET_ARN"),
+		FuncName:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME"),
+		StateTable: os.Getenv("STATE_TABLE"),
+	}
 }
 
 type secretValues struct {
@@ -48,7 +61,7 @@ type secretValues struct {
 }
 
 func handleRequest(ctx context.Context, event lambdaEvent) (Result, error) {
-	opts := NewArgument()
+	opts := newArgument()
 	return Handler(opts)
 }
 
@@ -95,16 +108,6 @@ func Handler(args Argument) (result Result, err error) {
 	}
 
 	return
-}
-
-// BuildOptions builds argument of receiver from environment variables.
-func NewArgument() Argument {
-	return Argument{
-		S3Bucket:  os.Getenv("S3_BUCKET"),
-		S3Prefix:  os.Getenv("S3_PREFIX"),
-		S3Region:  os.Getenv("S3_REGION"),
-		SecretArn: os.Getenv("SECRET_ARN"),
-	}
 }
 
 func hasS3File(s3Region, s3Bucket, s3Key string) (bool, error) {

@@ -3,6 +3,7 @@ package main_test
 import (
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"os"
 	"testing"
 
@@ -11,22 +12,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBasic(t *testing.T) {
+func loadArgument() falcon.Argument {
 	fd, err := os.Open("test.json")
-	require.NoError(t, err)
+	if err != nil {
+		log.Fatal("Fail to open test parameter file: ", err)
+	}
+
 	defer fd.Close()
 	data, err := ioutil.ReadAll(fd)
+	if err != nil {
+		log.Fatal("Fail to read parameter file: ", err)
+	}
 
-	args := falcon.NewArgument()
+	args := falcon.Argument{}
 	err = json.Unmarshal(data, &args)
-	require.NoError(t, err)
+	if err != nil {
+		log.Fatal("Fail to unmarshal parameter file: ", err)
+	}
 
-	// testCode := uuid.NewV4().String()
-	// opts.S3Prefix = fmt.Sprintf("%s%s/", opts.S3Prefix, testCode)
+	return args
+}
+
+func TestBasic(t *testing.T) {
+	args := loadArgument()
 
 	assert.NotEqual(t, args.S3Bucket, "")
 
-	_, err = falcon.Handler(args)
+	_, err := falcon.Handler(args)
 	require.NoError(t, err)
 	// assert.NotEqual(t, 0, len(resp.Uploaded))
 }

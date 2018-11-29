@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ''
+Parameters:
+  LambdaRoleArn:
+    Type: String
+    Default: ""
+  S3Bucket:
+    Type: String
+  S3Prefix:
+    Type: String
+  S3Region:
+    Type: String
+  SecretArn:
+    Type: String
+
+Conditions:
+  LambdaRoleRequired:
+    Fn::Equals: [ { Ref: LambdaRoleArn }, "" ]
+
+Resources:
+  # DynamoDBs
+  QueryState:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: func_name
+        AttributeType: S
+      KeySchema:
+      - AttributeName: func_name
+        KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  Forwarder:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: build
+      Handler: main
+      Runtime: go1.x
+      Timeout: 300
+      MemorySize: 1024
+      Role:
+        Fn::If: [ LambdaRoleRequired, {"Fn::GetAtt": LambdaRole.Arn}, {Ref: LambdaRoleArn} ]
+      Environment:
+        Variables:
+          S3_BUCKET:
+            Ref: S3Bucket
+          S3_PREFIX:
+            Ref: S3Prefix
+          S3_REGION:
+            Ref: S3Region
+          SECRET_ARN:
+            Ref: SecretArn
+          STATE_TABLE:
+            Ref: QueryState
+      Events:
+        EveryMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(1 minute)'
+
+  # --------------------------------------------------------
+  # IAM Roles
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Condition: LambdaRoleRequired
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+            Action: ["sts:AssumeRole"]
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "AlertResponderLambdaReviewer"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource:
+                  - Fn::GetAtt: QueryState.Arn
+                  - Fn::Sub: [ "${TableArn}/index/*", { TableArn: { "Fn::GetAtt": QueryState.Arn } } ]
+              - Effect: "Allow"
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - Fn::Sub: [ "arn:aws:s3:::${bucket}", { bucket: { "Ref": S3Bucket } } ]
+                  - Fn::Sub: [ "arn:aws:s3:::${bucket}/${prefix}*", { bucket: { "Ref": S3Bucket }, prefix: {"Ref": S3Prefix} } ]
