@@ -42,3 +42,12 @@ func TestBasic(t *testing.T) {
 	require.NoError(t, err)
 	// assert.NotEqual(t, 0, len(resp.Uploaded))
 }
+
+func TestSignature(t *testing.T) {
+	date := "Mon, 03 Dec 2018 07:40:53 GMT"
+	url := "firehose.crowdstrike.com/sensors/entities/datafeed/v1"
+	apiKey := "fTZk61mwcaPbmXlWQKHn"
+	qs := "appId=Test"
+	sig := falcon.MakeSignature("GET", date, url, qs, apiKey)
+	assert.Equal(t, "9dPbDzEV7g3M8-zA93PdXwFre0pI1jLx6Lf-J3eu9ks=", sig)
+}

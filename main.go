@@ -36,22 +36,24 @@ func main() {
 }
 
 type Argument struct {
-	S3Bucket   string `json:"s3bucket"`
-	S3Prefix   string `json:"s3prefix"`
-	S3Region   string `json:"s3region"`
-	SecretArn  string `json:"secret_arn"`
-	StateTable string `json:"state_table"`
-	FuncName   string
+	S3Bucket    string `json:"s3bucket"`
+	S3Prefix    string `json:"s3prefix"`
+	S3Region    string `json:"s3region"`
+	SecretArn   string `json:"secret_arn"`
+	StateTable  string `json:"state_table"`
+	TableRegion string `json:"table_region"`
+	FuncName    string
 }
 
 func newArgument() Argument {
 	return Argument{
-		S3Bucket:   os.Getenv("S3_BUCKET"),
-		S3Prefix:   os.Getenv("S3_PREFIX"),
-		S3Region:   os.Getenv("S3_REGION"),
-		SecretArn:  os.Getenv("SECRET_ARN"),
-		FuncName:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME"),
-		StateTable: os.Getenv("STATE_TABLE"),
+		S3Bucket:    os.Getenv("S3_BUCKET"),
+		S3Prefix:    os.Getenv("S3_PREFIX"),
+		S3Region:    os.Getenv("S3_REGION"),
+		SecretArn:   os.Getenv("SECRET_ARN"),
+		FuncName:    os.Getenv("AWS_LAMBDA_FUNCTION_NAME"),
+		StateTable:  os.Getenv("STATE_TABLE"),
+		TableRegion: os.Getenv("AWS_REGION"),
 	}
 }
 
@@ -60,49 +62,18 @@ type secretValues struct {
 	FalconKey  string `json:"falcon_key"`
 }
 
-func handleRequest(ctx context.Context, event lambdaEvent) (Result, error) {
-	opts := newArgument()
-	return Handler(opts)
-}
-
-func getSecretValues(secretArn string, values interface{}) error {
-	// sample: arn:aws:secretsmanager:ap-northeast-1:1234567890:secret:mytest
-	arn := strings.Split(secretArn, ":")
-	if len(arn) != 7 {
-		return errors.New(fmt.Sprintf("Invalid SecretsManager ARN format: %s", secretArn))
-	}
-	region := arn[3]
-
-	ssn := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	}))
-	mgr := secretsmanager.New(ssn)
-
-	result, err := mgr.GetSecretValue(&secretsmanager.GetSecretValueInput{
-		SecretId: aws.String(secretArn),
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "Fail to retrieve secret values")
-	}
-
-	err = json.Unmarshal([]byte(*result.SecretString), values)
-	if err != nil {
-		return errors.Wrap(err, "Fail to parse secret values as JSON")
-	}
-	log.Info("Feteched secrets data")
-
-	return nil
-}
-
-func detectionID2Key(s3Prefix, detectionID string) string {
-	return fmt.Sprintf("%s%s.json", s3Prefix, strings.Replace(detectionID, ":", "_", -1))
-}
-
 func Handler(args Argument) (result Result, err error) {
 	log.WithField("args", args).Info("Start")
 	var secrets secretValues
 	err = getSecretValues(args.SecretArn, &secrets)
+	if err != nil {
+		return
+	}
+
+	client := NewFalconClient(args.TableRegion, args.StateTable,
+		secrets.FalconUUID, secrets.FalconKey, args.FuncName)
+
+	err = client.query()
 	if err != nil {
 		return
 	}
@@ -153,6 +124,41 @@ func uploadS3File(s3Region, s3Bucket, s3Key string, data []byte) error {
 	if err != nil {
 		return errors.Wrap(err, "Fail to upload data to your bucket")
 	}
+
+	return nil
+}
+
+func handleRequest(ctx context.Context, event lambdaEvent) (Result, error) {
+	opts := newArgument()
+	return Handler(opts)
+}
+
+func getSecretValues(secretArn string, values interface{}) error {
+	// sample: arn:aws:secretsmanager:ap-northeast-1:1234567890:secret:mytest
+	arn := strings.Split(secretArn, ":")
+	if len(arn) != 7 {
+		return errors.New(fmt.Sprintf("Invalid SecretsManager ARN format: %s", secretArn))
+	}
+	region := arn[3]
+
+	ssn := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(region),
+	}))
+	mgr := secretsmanager.New(ssn)
+
+	result, err := mgr.GetSecretValue(&secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretArn),
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "Fail to retrieve secret values")
+	}
+
+	err = json.Unmarshal([]byte(*result.SecretString), values)
+	if err != nil {
+		return errors.Wrap(err, "Fail to parse secret values as JSON")
+	}
+	log.Info("Feteched secrets data")
 
 	return nil
 }
